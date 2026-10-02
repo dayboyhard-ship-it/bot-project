@@ -3,6 +3,7 @@ from models import Task
 from flask import render_template, request, redirect, url_for
 
 
+
 @app.route("/")
 def index():
     tasks = Task.query.order_by(Task.created_at.desc()).all()
