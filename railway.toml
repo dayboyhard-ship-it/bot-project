@@ -1,0 +1,7 @@
+[build]
+builder = "RAILPACK"
+
+[deploy]
+# gunicorn сам слушает 0.0.0.0:$PORT, который выдаёт Railway.
+# Таймаут больше стандартных 30 с — GigaChat иногда отвечает долго.
+startCommand = "gunicorn app:app --timeout 120"

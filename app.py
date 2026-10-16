@@ -1,4 +1,6 @@
 import json
+import os
+from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect
 from flask_sqlalchemy import SQLAlchemy
 from gigachat import GigaChat
@@ -9,8 +11,10 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///notes.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# Вставь свой ключ авторизации из Sber Developers Studio
-GIGACHAT_CREDENTIALS = "ТВОЙ_КЛЮЧ_ЗДЕСЬ"
+# Ключ авторизации из Sber Developers Studio берётся из файла .env
+# (строка GIGACHAT_CREDENTIALS=...). Файл .env не попадает в git.
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+GIGACHAT_CREDENTIALS = os.getenv("GIGACHAT_CREDENTIALS", "").strip()
 
 
 # ---------- МОДЕЛЬ БАЗЫ ДАННЫХ ----------
@@ -28,15 +32,22 @@ class Note(db.Model):
             return None
 
 
+# Создание таблиц (нужно и при запуске через gunicorn на Railway)
+with app.app_context():
+    db.create_all()
+
+
 # ---------- ФУНКЦИЯ ИИ (GIGACHAT) ----------
 def ask_ai(prompt):
-    if GIGACHAT_CREDENTIALS == "ТВОЙ_КЛЮЧ_ЗДЕСЬ":
+    if not GIGACHAT_CREDENTIALS:
         return {
-            "summary": "ИИ не подключён — вставьте ключ GigaChat в main.py.",
+            "summary": "ИИ не подключён — добавьте ключ GigaChat в файл .env.",
             "improvements": [
                 "Создайте проект в Sber Developers Studio",
                 "Скопируйте Authorization Key",
-                "Вставьте его в переменную GIGACHAT_CREDENTIALS",
+                "Создайте файл .env рядом с app.py (по образцу .env.example) "
+                "и вставьте ключ в строку GIGACHAT_CREDENTIALS=",
+                "Перезапустите приложение",
             ],
             "title_suggestion": "Пример заголовка",
             "tags": ["демо", "тест"]
@@ -61,15 +72,18 @@ def ask_ai(prompt):
         with GigaChat(
             credentials=GIGACHAT_CREDENTIALS,
             scope="GIGACHAT_API_PERS",
-            model="GigaChat",
+            model="GigaChat-2",
             verify_ssl_certs=False,
         ) as client:
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Вот заметка:\n\n{prompt}"}
             ]
-            response = client.chat(messages)
-            content = response.choices[0].message.content
+            response = client.chat({"messages": messages})
+            content = response.choices[0].message.content.strip()
+            # Модель иногда оборачивает ответ в ```json ... ``` — убираем обёртку
+            if content.startswith("```"):
+                content = content.strip("`").removeprefix("json").strip()
             return json.loads(content)
     except Exception as e:
         return {
@@ -115,7 +129,6 @@ def delete(id):
 
 
 # ---------- ЗАПУСК ----------
+# Локально: python app.py. На Railway запускается через gunicorn (см. railway.toml)
 if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
     app.run(debug=True)
